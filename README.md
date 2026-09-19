@@ -24,9 +24,9 @@ Jev evaluates enabled hazards independently. TypeScript policy composition appli
 
 - Node.js 20.6 or newer
 - Pi with extension/package support
-- A TypeSafe API key in `TYPESAFE_API_KEY`
+- A TypeSafe API key supplied through `TYPESAFE_API_KEY` or the user-local credential file described below
 
-No API key is stored in extension configuration.
+No API key is stored in extension policy configuration.
 
 ## Install
 
@@ -45,6 +45,31 @@ pi -e ./src/index.ts
 ```
 
 Load this extension last. Pi runs `tool_call` handlers in extension load order, and a later extension can mutate arguments after this guard has inspected them.
+
+## Credentials
+
+The extension resolves the TypeSafe key in this order:
+
+1. A non-empty `TYPESAFE_API_KEY` environment variable.
+2. `TYPESAFE_API_KEY` in `$XDG_CONFIG_HOME/pi-jev-guard/env` when `XDG_CONFIG_HOME` is an absolute path, or `~/.config/pi-jev-guard/env` otherwise.
+
+The credential file is parsed as data and is never sourced or executed. It may use either of these forms:
+
+```sh
+TYPESAFE_API_KEY=your-key
+export TYPESAFE_API_KEY='your-key'
+```
+
+Protect the file so only your user can read it:
+
+```sh
+mkdir -p ~/.config/pi-jev-guard
+chmod 700 ~/.config/pi-jev-guard
+$EDITOR ~/.config/pi-jev-guard/env
+chmod 600 ~/.config/pi-jev-guard/env
+```
+
+On Unix-like systems, the extension requires the configuration and `pi-jev-guard` directories to be owned by the current user, real directories rather than symlinks, and not writable by group or other users. It also rejects symlink credential files, files not owned by the current user, files readable by group or other users, and files larger than 16 KiB. Credential-file loading is refused on Windows; use the environment variable there. An invalid credential file is treated as unavailable classification and follows the configured fail-closed behavior. Never place this file in the repository.
 
 ## Configuration
 
