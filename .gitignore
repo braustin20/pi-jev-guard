@@ -1,0 +1,16 @@
+node_modules/
+coverage/
+dist/
+*.log
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+*.p12
+*.pfx
+credentials.json
+secrets.json
+.pi/jev-guard.json
+.pi/subagents/
+.DS_Store
