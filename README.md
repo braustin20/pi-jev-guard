@@ -2,7 +2,7 @@
 
 A global [Pi](https://github.com/earendil-works/pi-mono) extension that gates tool calls and user-entered shell commands. It combines local deterministic checks with one battery of independent [TypeSafe AI Jev](https://docs.typesafe.ai/) Noul questions, then allows, prompts, or blocks the call according to policy.
 
-This is a policy gate, not a sandbox.
+This is a policy gate and does not provide the same level of protection as a sandbox.
 
 ## What it checks
 
@@ -18,7 +18,7 @@ Local checks cover:
 - sensitive file reads
 - overwrites of dirty, untracked, or otherwise unrecoverable files
 
-Jev evaluates enabled hazards independently. TypeScript policy composition—not the model—applies thresholds and precedence.
+Jev evaluates enabled hazards independently. TypeScript policy composition applies thresholds and precedence (not the model).
 
 ## Requirements
 
@@ -26,7 +26,7 @@ Jev evaluates enabled hazards independently. TypeScript policy composition—not
 - Pi with extension/package support
 - A TypeSafe API key in `TYPESAFE_API_KEY`
 
-No API key is stored in extension configuration. Do not commit `.env`, global policy files, project policy files containing local paths, or credentials.
+No API key is stored in extension configuration.
 
 ## Install
 
@@ -129,7 +129,7 @@ Jev findings prompt by default. Use deterministic block rules for unconditional 
 
 ### Failure behavior
 
-Defaults are fail-closed:
+Defaults:
 
 - interactive classification failure: prompt and disclose the failure
 - headless classification failure: block
@@ -165,11 +165,11 @@ Classification sends a sanitized, size-bounded representation to TypeSafe:
 
 - `read`, `write`, and `edit` file contents are omitted by default
 - secret-looking keys, environment assignments, sensitive long flags and headers, basic-auth arguments, bearer values, URL credentials, and sensitive query values are redacted
-- path facts, the working directory, project root, tool name/description, sanitized arguments, shell facts, recoverability facts, and finding summaries are sent because they are classification inputs; these may reveal local names and directory structure
-- SDK logging defaults to `off`; debug logging is not allowed by the schema because it includes request/response bodies
+- path facts, the working directory, project root, tool name/description, sanitized arguments, shell facts, recoverability facts, and finding summaries are sent because they are classification inputs. These may reveal local names and directory structure
+- SDK logging defaults to `off`. Debug logging is not allowed by the schema because it includes request/response bodies
 - audit entries contain hashes, categories, probabilities, model, usage, and decisions—not raw arguments
 
-TypeSafe states that service inputs are not used to train or fine-tune models. Zero-data-retention is an enterprise feature; review TypeSafe's current privacy and data-handling terms before enabling the service for sensitive environments.
+TypeSafe states that service inputs are not used to train or fine-tune models. Zero-data-retention is an enterprise feature. Review TypeSafe's current privacy and data-handling terms before enabling the service for sensitive environments.
 
 ## Limitations
 
@@ -177,7 +177,7 @@ TypeSafe states that service inputs are not used to train or fine-tune models. Z
 - A custom tool can perform operations not represented by its declared arguments.
 - Later-loaded handlers can mutate arguments after inspection.
 - Path checks are subject to time-of-check/time-of-use races.
-- Conservative shell scanning is not a complete shell parser; uncertain commands require approval.
+- Conservative shell scanning is not a complete shell parser - uncertain commands require approval.
 - This extension does not isolate the filesystem, network, credentials, or process tree.
 
 ## Development
