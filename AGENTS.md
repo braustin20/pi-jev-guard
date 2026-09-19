@@ -30,8 +30,8 @@ PI_JEV_GUARD_LIVE=1 npm run test:live
 ## Safety invariants
 
 - Never commit API keys, credentials, `.env` files, audit/session data, absolute user paths, or real global/project policy files.
-- Read the API key only from `TYPESAFE_API_KEY` or the fixed user-local `pi-jev-guard/env` file under an absolute `XDG_CONFIG_HOME` (falling back to `~/.config`); do not add credential fields to policy configuration or project-local files.
-- Environment credentials take precedence. Parse the user-local file as data—never source or execute it—and preserve parent-directory and file owner/mode, regular-file, size, and no-symlink checks.
+- Read the API key only from `TYPESAFE_API_KEY` or `typesafeApiKey` in the fixed user-local `pi-jev-guard/settings.json` file under an absolute `XDG_CONFIG_HOME` (falling back to `~/.config`); do not add credential fields to policy configuration or project-local files.
+- Environment credentials take precedence. Parse the user-local settings as strict JSON—never source or execute it—and preserve parent-directory and file owner/mode, regular-file, size, and no-symlink checks.
 - Keep `@typesafe-ai/sdk` pinned exactly and retain the lockfile.
 - Reject unknown configuration fields. Project policy stays tighten-only unless global policy explicitly allows relaxation.
 - Use `path.relative` containment and canonicalize existing paths/nearest existing parents. Do not replace this with string-prefix checks.

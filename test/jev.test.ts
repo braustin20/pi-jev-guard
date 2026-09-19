@@ -64,7 +64,11 @@ test("classifier uses the user-local credential file when the environment key is
   const configHome = await mkdtemp(path.join(tmpdir(), "jev-guard-jev-credential-"));
   const credentialDirectory = path.join(configHome, "pi-jev-guard");
   await mkdir(credentialDirectory);
-  await writeFile(path.join(credentialDirectory, "env"), "TYPESAFE_API_KEY=file-backed-key\n", { mode: 0o600 });
+  await writeFile(
+    path.join(credentialDirectory, "settings.json"),
+    JSON.stringify({ typesafeApiKey: "file-backed-key" }),
+    { mode: 0o600 },
+  );
   const previousKey = process.env.TYPESAFE_API_KEY;
   const previousConfigHome = process.env.XDG_CONFIG_HOME;
   delete process.env.TYPESAFE_API_KEY;

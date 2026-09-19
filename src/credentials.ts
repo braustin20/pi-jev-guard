@@ -3,7 +3,8 @@ import { homedir } from "node:os";
 import path from "node:path";
 
 const MAX_CREDENTIAL_FILE_BYTES = 16 * 1024;
-const CREDENTIAL_FILE_NAME = "env";
+const CREDENTIAL_FILE_NAME = "settings.json";
+const SETTINGS_KEYS = new Set(["typesafeApiKey"]);
 
 export interface TypeSafeCredential {
   apiKey: string;
@@ -40,30 +41,26 @@ export function defaultCredentialPath(environment: NodeJS.ProcessEnv = process.e
   return path.join(defaultConfigHome(environment), "pi-jev-guard", CREDENTIAL_FILE_NAME);
 }
 
-function parseCredentialFile(source: string, filePath: string): string | undefined {
+function parseCredentialFile(source: string, filePath: string): string {
   if (source.includes("\0")) throw new CredentialFileError(`${filePath} contains a NUL byte`);
-  let value: string | undefined;
-  for (const line of source.split(/\r?\n/)) {
-    const match = line.match(/^\s*(?:export\s+)?TYPESAFE_API_KEY\s*=\s*(.*?)\s*$/);
-    if (!match) continue;
-    if (value !== undefined) throw new CredentialFileError(`${filePath} defines TYPESAFE_API_KEY more than once`);
-    let candidate = match[1] ?? "";
-    const quote = candidate.charAt(0);
-    if (quote === "'" || quote === '"') {
-      const closingQuote = candidate.indexOf(quote, 1);
-      if (closingQuote < 0) throw new CredentialFileError(`${filePath} contains an unterminated quoted TYPESAFE_API_KEY`);
-      const suffix = candidate.slice(closingQuote + 1).trim();
-      if (suffix && !suffix.startsWith("#")) {
-        throw new CredentialFileError(`${filePath} contains unexpected text after TYPESAFE_API_KEY`);
-      }
-      candidate = candidate.slice(1, closingQuote);
-    } else {
-      candidate = candidate.replace(/\s+#.*$/, "").trim();
-    }
-    if (!candidate) throw new CredentialFileError(`${filePath} defines an empty TYPESAFE_API_KEY`);
-    value = candidate;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(source);
+  } catch {
+    throw new CredentialFileError(`${filePath} is not valid JSON`);
   }
-  return value;
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    throw new CredentialFileError(`${filePath} must contain a JSON object`);
+  }
+  const settings = parsed as Record<string, unknown>;
+  const unknownKeys = Object.keys(settings).filter((key) => !SETTINGS_KEYS.has(key));
+  if (unknownKeys.length > 0) {
+    throw new CredentialFileError(`${filePath} contains unknown settings: ${unknownKeys.join(", ")}`);
+  }
+  if (typeof settings.typesafeApiKey !== "string" || settings.typesafeApiKey.trim().length === 0) {
+    throw new CredentialFileError(`${filePath} must define a non-empty typesafeApiKey string`);
+  }
+  return settings.typesafeApiKey.trim();
 }
 
 function assertSecureDirectory(directoryPath: string): void {
