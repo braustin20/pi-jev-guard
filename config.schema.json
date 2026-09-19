@@ -1,0 +1,113 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/braustin20/pi-jev-guard/config.schema.json",
+  "title": "Pi Jev Guard configuration",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "version": { "const": 1 },
+    "model": { "type": "string", "minLength": 1 },
+    "protectUserBash": { "type": "boolean" },
+    "allowProjectRelaxation": { "type": "boolean" },
+    "projectBoundary": { "enum": ["cwd", "git-root"] },
+    "failureMode": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "interactive": { "enum": ["prompt", "block", "allow"] },
+        "headless": { "enum": ["block", "allow-read-only", "allow"] }
+      }
+    },
+    "api": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "timeoutMs": { "type": "integer", "minimum": 100, "maximum": 30000 },
+        "totalTimeoutMs": { "type": "integer", "minimum": 100, "maximum": 60000 },
+        "maxRetries": { "type": "integer", "minimum": 0, "maximum": 3 },
+        "logLevel": { "enum": ["warn", "error", "off"] }
+      }
+    },
+    "privacy": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "includeFileContents": { "type": "boolean" },
+        "maxStateBytes": { "type": "integer", "minimum": 1024, "maximum": 65536 },
+        "redactKeys": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        }
+      }
+    },
+    "hazards": {
+      "type": "object",
+      "additionalProperties": { "$ref": "#/$defs/hazard" }
+    },
+    "protectedPaths": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true
+    },
+    "trustedDestinations": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true
+    },
+    "excludedTools": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true
+    },
+    "sessionApprovals": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "maxEntries": { "type": "integer", "minimum": 0, "maximum": 4096 }
+      }
+    },
+    "rules": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/rule" }
+    }
+  },
+  "$defs": {
+    "hazard": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "decision": { "enum": ["allow", "prompt", "block"] },
+        "promptAt": { "type": "number", "minimum": 0, "maximum": 1 },
+        "instructions": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["question"],
+          "properties": {
+            "question": { "type": "string", "minLength": 1 },
+            "focus": { "type": "string" },
+            "true": { "type": "string" },
+            "false": { "type": "string" }
+          }
+        }
+      }
+    },
+    "rule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "decision"],
+      "minProperties": 3,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "decision": { "enum": ["allow", "prompt", "block"] },
+        "tool": { "type": "string", "minLength": 1 },
+        "command": { "type": "string" },
+        "commandRegex": { "type": "string", "minLength": 1, "maxLength": 1000 },
+        "pathGlob": { "type": "string", "minLength": 1 },
+        "destination": { "type": "string", "minLength": 1 }
+      }
+    }
+  }
+}

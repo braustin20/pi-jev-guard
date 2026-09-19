@@ -1,0 +1,51 @@
+{
+  "name": "pi-jev-guard",
+  "version": "0.1.0",
+  "description": "A policy gate for Pi tool and shell calls using deterministic checks and TypeSafe AI's Jev classifier.",
+  "type": "module",
+  "private": true,
+  "engines": {
+    "node": ">=20.6"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/braustin20/pi-jev-guard.git"
+  },
+  "files": [
+    "src",
+    "config.schema.json",
+    "README.md"
+  ],
+  "keywords": [
+    "pi-package",
+    "pi-extension",
+    "security",
+    "jev",
+    "typesafe-ai"
+  ],
+  "scripts": {
+    "test": "node --import tsx --test test/*.test.ts",
+    "test:live": "PI_JEV_GUARD_LIVE=1 node --import tsx --test test/live-evaluation.test.ts",
+    "typecheck": "tsc --noEmit",
+    "check": "npm run typecheck && npm test"
+  },
+  "dependencies": {
+    "@typesafe-ai/sdk": "0.6.0",
+    "ajv": "8.20.0",
+    "safe-regex2": "5.1.1"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "0.85.1",
+    "@types/node": "26.6.2",
+    "tsx": "4.23.13",
+    "typescript": "5.9.3"
+  },
+  "pi": {
+    "extensions": [
+      "./src/index.ts"
+    ]
+  }
+}
