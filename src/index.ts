@@ -196,7 +196,7 @@ export class GuardRuntime {
       `Model: ${loaded.config.model}`,
       `Project root: ${loaded.projectRoot}`,
       `Project policy: ${projectPolicy}`,
-      `TypeSafe API: ${this.classifier.available() ? "available" : "unavailable (TYPESAFE_API_KEY not set)"}`,
+      `TypeSafe API: ${this.classifier.available() ? "available" : "unavailable (environment and config-file credentials not found or invalid)"}`,
       `Protected user shell: ${loaded.config.protectUserBash ? "yes" : "no"}`,
       `Session approvals: ${this.approvals.size}`,
     ].join("\n");

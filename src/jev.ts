@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import {
   APIError,
   APIUserAbortError,
@@ -7,6 +8,11 @@ import {
   type Questions,
   TypeSafeClient,
 } from "@typesafe-ai/sdk";
+import {
+  CredentialError,
+  CredentialFileError,
+  resolveTypeSafeCredential,
+} from "./credentials.js";
 import { redactString, redactValue, serializeState } from "./redaction.js";
 import { analyzeShell } from "./shell.js";
 import type { GuardConfig, JevAssessment, NormalizedCall } from "./types.js";
@@ -110,18 +116,24 @@ export class TypeSafeJevClassifier implements JevClassifier {
   public constructor(private readonly fetchImplementation?: Fetch) {}
 
   public available(): boolean {
-    return typeof process.env.TYPESAFE_API_KEY === "string" && process.env.TYPESAFE_API_KEY.trim().length > 0;
+    try {
+      return resolveTypeSafeCredential() !== undefined;
+    } catch {
+      return false;
+    }
   }
 
-  private getClient(config: GuardConfig): TypeSafeClient {
+  private getClient(config: GuardConfig, apiKey: string): TypeSafeClient {
     const key = JSON.stringify({
       model: config.model,
       logLevel: config.api.logLevel,
       timeoutMs: config.api.timeoutMs,
       maxRetries: config.api.maxRetries,
+      credentialFingerprint: createHash("sha256").update(apiKey).digest("hex"),
     });
     if (!this.client || this.clientConfigKey !== key) {
       this.client = new TypeSafeClient({
+        apiKey,
         defaultModel: config.model,
         logLevel: config.api.logLevel,
         timeout: config.api.timeoutMs,
@@ -134,7 +146,10 @@ export class TypeSafeJevClassifier implements JevClassifier {
   }
 
   public async classify(call: NormalizedCall, config: GuardConfig, signal?: AbortSignal): Promise<JevAssessment> {
-    if (!this.available()) throw new Error("TYPESAFE_API_KEY is not configured");
+    const credential = resolveTypeSafeCredential();
+    if (!credential) {
+      throw new CredentialError("No TypeSafe credential is configured");
+    }
     let classifierShell = call.shell;
     if (call.shell) {
       const sanitizedCommand = redactString(call.shell.command, config.privacy.redactKeys);
@@ -169,7 +184,7 @@ export class TypeSafeJevClassifier implements JevClassifier {
     const deadline = combinedSignal(signal, config.api.totalTimeoutMs);
     try {
       const questions = buildQuestions(config);
-      const response = await this.getClient(config).systemOne(
+      const response = await this.getClient(config, credential.apiKey).systemOne(
         { state: serialized.state, questions, model: config.model },
         {
           signal: deadline.signal,
@@ -195,6 +210,8 @@ export class TypeSafeJevClassifier implements JevClassifier {
 }
 
 export function safeClassificationError(error: unknown): string {
+  if (error instanceof CredentialFileError) return "TypeSafe credential file rejected";
+  if (error instanceof CredentialError) return "TypeSafe credential unavailable";
   if (error instanceof APIUserAbortError) return "classification cancelled";
   if (error instanceof APIError) return `${error.constructor.name} (${error.status})`;
   return error instanceof Error ? error.name : "unknown classification error";

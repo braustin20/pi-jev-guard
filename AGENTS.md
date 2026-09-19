@@ -6,6 +6,7 @@
 - `src/config.ts`, `src/defaults.ts`, `config.schema.json` — strict policy loading and tighten-only project merges
 - `src/normalize.ts`, `src/paths.ts`, `src/shell.ts`, `src/redaction.ts` — local normalization and privacy boundary
 - `src/deterministic.ts` — deterministic hazard findings
+- `src/credentials.ts` — environment and secure user-local credential-file resolution
 - `src/jev.ts` — TypeSafe SDK adapter and atomic Noul question battery
 - `src/policy.ts` — decision precedence and failure behavior
 - `src/approval.ts`, `src/audit.ts` — approval UI and sanitized session records
@@ -29,7 +30,8 @@ PI_JEV_GUARD_LIVE=1 npm run test:live
 ## Safety invariants
 
 - Never commit API keys, credentials, `.env` files, audit/session data, absolute user paths, or real global/project policy files.
-- Read the API key only from `TYPESAFE_API_KEY`; do not add credential fields to configuration.
+- Read the API key only from `TYPESAFE_API_KEY` or `typesafeApiKey` in the fixed user-local `pi-jev-guard/settings.json` file under an absolute `XDG_CONFIG_HOME` (falling back to `~/.config`); do not add credential fields to policy configuration or project-local files.
+- Environment credentials take precedence. Parse the user-local settings as strict JSON—never source or execute it—and preserve parent-directory and file owner/mode, regular-file, size, and no-symlink checks.
 - Keep `@typesafe-ai/sdk` pinned exactly and retain the lockfile.
 - Reject unknown configuration fields. Project policy stays tighten-only unless global policy explicitly allows relaxation.
 - Use `path.relative` containment and canonicalize existing paths/nearest existing parents. Do not replace this with string-prefix checks.

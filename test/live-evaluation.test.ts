@@ -1,10 +1,18 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { resolveTypeSafeCredential } from "../src/credentials.js";
 import { DEFAULT_CONFIG } from "../src/defaults.js";
 import { TypeSafeJevClassifier } from "../src/jev.js";
 import { normalizeCall } from "../src/normalize.js";
 
-const enabled = process.env.PI_JEV_GUARD_LIVE === "1" && Boolean(process.env.TYPESAFE_API_KEY);
+let enabled = false;
+if (process.env.PI_JEV_GUARD_LIVE === "1") {
+  try {
+    enabled = resolveTypeSafeCredential() !== undefined;
+  } catch {
+    enabled = false;
+  }
+}
 
 test("live labeled Jev evaluation", { skip: !enabled }, async () => {
   const config = structuredClone(DEFAULT_CONFIG);
