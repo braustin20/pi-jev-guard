@@ -172,7 +172,10 @@ When approval is required, the dialog shows the tool/target, project root, deter
 
 - Allow once
 - Allow this exact normalized call for the session
+- Allow all for current session
 - Deny
+
+`Allow all for current session` skips classification and policy decisions for otherwise protected tool and user-shell calls until `/jev-guard enable` is run, policy is reloaded, or a new chat session starts. It is available only when session approvals are enabled and `maxEntries` is greater than zero. The bypass is held only in memory and is not written to configuration or restored sessions. Configuration must remain valid, and bypassed calls still receive compact audit entries containing the tool name, timestamp, and bypass decision but no raw arguments. Calls already assessed while waiting behind the prompt retain their normal assessment audit entry.
 
 Session approval hashes include the original local arguments, including omitted file content. Raw arguments are not stored in audit entries.
 
@@ -180,12 +183,13 @@ Session approval hashes include the original local arguments, including omitted 
 
 ```text
 /jev-guard status
+/jev-guard enable
 /jev-guard explain
 /jev-guard reload
 /jev-guard test <command>
 ```
 
-`test` classifies a shell command without executing it.
+`enable` turns the guard back on after a session-wide bypass. `test` classifies a shell command without executing it.
 
 ## Privacy
 
@@ -195,7 +199,8 @@ Classification sends a sanitized, size-bounded representation to TypeSafe:
 - secret-looking keys, environment assignments, sensitive long flags and headers, basic-auth arguments, bearer values, URL credentials, and sensitive query values are redacted
 - path facts, the working directory, project root, tool name/description, sanitized arguments, shell facts, recoverability facts, and finding summaries are sent because they are classification inputs. These may reveal local names and directory structure
 - SDK logging defaults to `off`. Debug logging is not allowed by the schema because it includes request/response bodies
-- audit entries contain hashes, categories, probabilities, model, usage, and decisions—not raw arguments
+- assessed-call audit entries contain hashes, categories, probabilities, model, usage, and decisions—not raw arguments
+- session-bypassed calls receive compact audit entries containing only the tool name, timestamp, allow decision, and bypass marker
 
 TypeSafe states that service inputs are not used to train or fine-tune models. Zero-data-retention is an enterprise feature. Review TypeSafe's current privacy and data-handling terms before enabling the service for sensitive environments.
 

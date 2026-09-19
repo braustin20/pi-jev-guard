@@ -1,9 +1,9 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { Assessment } from "./types.js";
 
-export type ApprovalChoice = "once" | "session" | "deny";
+export type ApprovalChoice = "once" | "session" | "all-session" | "bypassed" | "deny";
 
-function detail(assessment: Assessment): string {
+function detail(assessment: Assessment, sessionControlsEnabled: boolean): string {
   let target = assessment.call.shell?.command;
   if (!target) target = assessment.call.paths.map((path) => path.canonical ?? path.input).join(", ");
   if (!target) target = "(no path or command)";
@@ -30,13 +30,22 @@ function detail(assessment: Assessment): string {
     model,
     "",
     `${privacy}${truncation}`,
+    ...(sessionControlsEnabled
+      ? ["", "Warning: Allow all for current session disables guard decisions until /jev-guard enable, policy reload, or a new session starts."]
+      : []),
   ].join("\n");
 }
 
 export class ApprovalPrompter {
   private tail: Promise<void> = Promise.resolve();
 
-  public async prompt(assessment: Assessment, ctx: ExtensionContext, sessionCacheEnabled: boolean): Promise<ApprovalChoice> {
+  public async prompt(
+    assessment: Assessment,
+    ctx: ExtensionContext,
+    sessionControlsEnabled: boolean,
+    isSessionBypassed: () => boolean,
+    bypassSession: () => void,
+  ): Promise<ApprovalChoice> {
     let release: (() => void) | undefined;
     const previous = this.tail;
     this.tail = new Promise<void>((resolve) => {
@@ -44,12 +53,21 @@ export class ApprovalPrompter {
     });
     await previous;
     try {
-      const options = sessionCacheEnabled
-        ? ["Allow once", "Allow this exact call for the session", "Deny"]
+      if (ctx.signal?.aborted) return "deny";
+      if (isSessionBypassed()) return "bypassed";
+      const options = sessionControlsEnabled
+        ? ["Allow once", "Allow this exact call for the session", "Allow all for current session", "Deny"]
         : ["Allow once", "Deny"];
-      const selected = await ctx.ui.select(`Jev Guard approval required\n\n${detail(assessment)}`, options);
+      const selected = await ctx.ui.select(
+        `Jev Guard approval required\n\n${detail(assessment, sessionControlsEnabled)}`,
+        options,
+      );
       if (selected === "Allow once") return "once";
       if (selected === "Allow this exact call for the session") return "session";
+      if (selected === "Allow all for current session") {
+        bypassSession();
+        return "all-session";
+      }
       return "deny";
     } finally {
       release?.();

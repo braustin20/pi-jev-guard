@@ -37,6 +37,8 @@ PI_JEV_GUARD_LIVE=1 npm run test:live
 - Use `path.relative` containment and canonicalize existing paths/nearest existing parents. Do not replace this with string-prefix checks.
 - Do not send `read`, `write`, or `edit` file contents by default. Keep SDK logging at `warn`, `error`, or `off`; never enable `debug` in policy.
 - Raw arguments may be hashed locally for exact session approvals, but must not be written to audit entries.
+- Keep the full-session bypass in memory only. Reset it on `session_start` and policy invalidation, preserve `/jev-guard enable`, and never persist or restore it.
+- Session bypass may skip classification and policy decisions, but invalid configuration and audit failure remain fail-closed. Record compact bypass audit entries without raw arguments.
 - Classification failure, cancellation, invalid policy, and unavailable approval UI must preserve fail-closed behavior.
 - Deterministic code owns path arithmetic, shell operators, known destructive forms, and hard blocks. Jev evaluates narrow independent hazards; do not ask it for a combined risk score.
 - Preserve decision precedence documented in `README.md` and test every change to it.
