@@ -31,6 +31,7 @@ test("global protected paths and redaction keys extend secure defaults", () => {
 test("project merge is tighten-only by default", () => {
   const merged = mergeConfigForTest(structuredClone(DEFAULT_CONFIG), {
     protectUserBash: false,
+    sessionApprovals: { enabled: false, maxEntries: 0 },
     excludedTools: ["bash"],
     trustedDestinations: ["evil.example"],
     hazards: {
@@ -44,6 +45,8 @@ test("project merge is tighten-only by default", () => {
     ],
   }, true);
   assert.equal(merged.protectUserBash, true);
+  assert.equal(merged.sessionApprovals.enabled, false);
+  assert.equal(merged.sessionApprovals.maxEntries, 0);
   assert.deepEqual(merged.excludedTools, []);
   assert.deepEqual(merged.trustedDestinations, []);
   assert.equal(merged.hazards.destructive_filesystem?.enabled, true);

@@ -114,6 +114,11 @@ function mergeTightenOnly(global: GuardConfig, project: Partial<GuardConfig>): G
   result.privacy.includeFileContents &&= project.privacy?.includeFileContents ?? true;
   result.privacy.maxStateBytes = Math.min(result.privacy.maxStateBytes, project.privacy?.maxStateBytes ?? Infinity);
   result.privacy.redactKeys = [...new Set([...result.privacy.redactKeys, ...(project.privacy?.redactKeys ?? [])])];
+  result.sessionApprovals.enabled &&= project.sessionApprovals?.enabled ?? true;
+  result.sessionApprovals.maxEntries = Math.min(
+    result.sessionApprovals.maxEntries,
+    project.sessionApprovals?.maxEntries ?? Infinity,
+  );
   result.protectedPaths = [...new Set([...result.protectedPaths, ...(project.protectedPaths ?? [])])];
   result.rules = [
     ...result.rules,

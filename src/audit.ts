@@ -16,6 +16,22 @@ export interface AuditEntry {
   timestamp: string;
 }
 
+export interface SessionBypassAuditEntry {
+  toolName: string;
+  decision: "allow";
+  sessionBypass: true;
+  timestamp: string;
+}
+
+export function createSessionBypassAuditEntry(toolName: string): SessionBypassAuditEntry {
+  return {
+    toolName,
+    decision: "allow",
+    sessionBypass: true,
+    timestamp: new Date().toISOString(),
+  };
+}
+
 export function createAuditEntry(assessment: Assessment): AuditEntry {
   return {
     callHash: assessment.call.callHash,
