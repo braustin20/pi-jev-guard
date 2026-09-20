@@ -20,6 +20,8 @@ Local checks cover:
 
 Jev evaluates enabled hazards independently. TypeScript policy composition applies thresholds and precedence (not the model).
 
+The `ask_user` interaction tool is always passed through without classification. It only collects user input; hazardous actions described in a question are not actions performed by the tool call itself.
+
 ## Requirements
 
 - Node.js 20.6 or newer

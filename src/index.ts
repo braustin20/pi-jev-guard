@@ -16,6 +16,8 @@ import { findGitRoot, normalizeCall } from "./normalize.js";
 import { composeDecision, composeFailureDecision } from "./policy.js";
 import type { Assessment, ConfigLoadResult, GuardConfig, ToolMetadata } from "./types.js";
 
+const INTERACTION_ONLY_TOOLS = new Set(["ask_user"]);
+
 export class GuardRuntime {
   private configState: ConfigLoadResult | undefined;
   private configKey = "";
@@ -333,7 +335,7 @@ export function registerJevGuard(
       return { block: true, reason: error instanceof Error ? error.message : String(error) };
     }
     if (!config) return { block: true, reason: "Jev Guard configuration is invalid; execution is disabled" };
-    if (config.excludedTools.includes(event.toolName)) return undefined;
+    if (INTERACTION_ONLY_TOOLS.has(event.toolName) || config.excludedTools.includes(event.toolName)) return undefined;
     if (guard.isSessionBypassed()) {
       try {
         guard.auditSessionBypass(event.toolName);

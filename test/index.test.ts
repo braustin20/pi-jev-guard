@@ -361,6 +361,29 @@ test("policy reload clears the session bypass and invalid policy still blocks", 
   assert.equal(classifier.calls, 1);
 }));
 
+test("ask_user bypasses classification even when its prompt describes a destructive action", async () => isolatedAgentDir(async (cwd) => {
+  const pi = fakePi();
+  const classifier = new FakeClassifier();
+  registerJevGuard(pi.api, classifier);
+  const result = await pi.handlers.get("tool_call")?.(
+    {
+      type: "tool_call",
+      toolName: "ask_user",
+      toolCallId: "1",
+      input: {
+        questions: [{
+          question: "Should I permanently delete the unrecoverable files?",
+          type: "confirm",
+        }],
+      },
+    },
+    context(cwd, { hasUI: false }),
+  );
+  assert.equal(result, undefined);
+  assert.equal(classifier.calls, 0);
+  assert.equal(pi.entries.length, 0);
+}));
+
 test("excluded tools bypass classification", async () => isolatedAgentDir(async (cwd, agentDir) => {
   await writeFile(path.join(agentDir, "jev-guard.json"), JSON.stringify({
     version: 1,
