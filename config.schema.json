@@ -45,7 +45,7 @@
     "hazards": {
       "type": "object",
       "propertyNames": {
-        "not": { "enum": ["__proto__", "constructor", "prototype"] }
+        "not": { "enum": ["__proto__", "constructor", "prototype", "user_intent_alignment"] }
       },
       "additionalProperties": { "$ref": "#/$defs/hazard" }
     },
@@ -63,6 +63,15 @@
       "type": "array",
       "items": { "type": "string", "minLength": 1 },
       "uniqueItems": true
+    },
+    "intentAwareness": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "alignmentAt": { "type": "number", "minimum": 0.5, "maximum": 1 },
+        "maxRequestBytes": { "type": "integer", "minimum": 128, "maximum": 8192 }
+      }
     },
     "sessionApprovals": {
       "type": "object",

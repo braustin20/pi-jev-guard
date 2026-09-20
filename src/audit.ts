@@ -9,6 +9,7 @@ export interface AuditEntry {
   findingIds: string[];
   categories: string[];
   probabilities: Record<string, number>;
+  intentAlignment?: number;
   model?: string;
   usage?: Assessment["usage"];
   classificationError?: string;
@@ -40,6 +41,7 @@ export function createAuditEntry(assessment: Assessment): AuditEntry {
     findingIds: assessment.findings.map((finding) => finding.id),
     categories: [...new Set(assessment.findings.map((finding) => finding.category))],
     probabilities: assessment.probabilities,
+    ...(assessment.intentAlignment === undefined ? {} : { intentAlignment: assessment.intentAlignment }),
     ...(assessment.model ? { model: assessment.model } : {}),
     ...(assessment.usage ? { usage: assessment.usage } : {}),
     ...(assessment.classificationError ? { classificationError: assessment.classificationError } : {}),

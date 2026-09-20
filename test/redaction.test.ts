@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { redactString, redactValue, serializeState } from "../src/redaction.js";
+import { redactString, redactValue, serializeState, truncateString } from "../src/redaction.js";
 
 const keys = ["token", "password", "apiKey", "authorization", "secret"];
 
@@ -40,6 +40,14 @@ test("omits file content fields when configured", () => {
     content: "[OMITTED]",
     edits: [{ oldText: "[OMITTED]", newText: "[OMITTED]" }],
   });
+});
+
+test("caps user requests by UTF-8 bytes without splitting characters", () => {
+  const result = truncateString("Create 🔒".repeat(100), 80);
+  assert.equal(result.truncated, true);
+  assert.ok(Buffer.byteLength(result.value, "utf8") <= 80);
+  assert.doesNotMatch(result.value, /�/);
+  assert.match(result.value, /\[TRUNCATED]$/);
 });
 
 test("caps classifier state by UTF-8 bytes", () => {

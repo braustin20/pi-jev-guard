@@ -22,6 +22,8 @@ Jev evaluates enabled hazards independently. TypeScript policy composition appli
 
 The `ask_user` interaction tool is always passed through without classification. It only collects user input; hazardous actions described in a question are not actions performed by the tool call itself.
 
+Optional intent awareness compares the current tool call with the latest user request. Strong alignment can suppress redundant Jev findings configured to prompt, while explicit rules, deterministic findings, and Jev findings configured to block retain their normal precedence.
+
 ## Requirements
 
 - Node.js 20.6 or newer
@@ -113,6 +115,11 @@ Minimal example:
     "maxStateBytes": 12000,
     "redactKeys": ["token", "password", "secret", "apiKey", "authorization"]
   },
+  "intentAwareness": {
+    "enabled": true,
+    "alignmentAt": 0.9,
+    "maxRequestBytes": 2048
+  },
   "hazards": {
     "destructive_filesystem": {
       "enabled": true,
@@ -160,7 +167,9 @@ See [`config.schema.json`](config.schema.json) for all fields. Unknown fields an
 6. Explicit allow rule
 7. Allow
 
-Jev findings prompt by default. Use deterministic block rules for unconditional denials.
+Jev findings prompt by default. When intent awareness is enabled and Jev reports alignment at or above `alignmentAt`, only Jev findings configured as `prompt` are suppressed. Alignment never overrides explicit block or prompt rules, deterministic findings, Jev findings configured as `block`, truncated classifier state, cancellation, classification failure, or invalid configuration.
+
+Intent awareness is disabled by default because it sends additional conversation content to TypeSafe. A tighten-only project policy may disable it, raise `alignmentAt`, or lower `maxRequestBytes`, but cannot enable or relax it unless global policy permits project relaxation.
 
 ### Failure behavior
 
@@ -205,8 +214,9 @@ Classification sends a sanitized, size-bounded representation to TypeSafe:
 - `read`, `write`, and `edit` file contents are omitted by default
 - secret-looking keys, environment assignments, sensitive long flags and headers, basic-auth arguments, bearer values, URL credentials, and sensitive query values are redacted
 - path facts, the working directory, project root, tool name/description, sanitized arguments, shell facts, recoverability facts, and finding summaries are sent because they are classification inputs. These may reveal local names and directory structure
+- when `intentAwareness.enabled` is true, text from the latest user message is redacted, limited to `maxRequestBytes`, and sent as a separate `userRequest` field. Images and older conversation messages are not sent
 - SDK logging defaults to `off`. Debug logging is not allowed by the schema because it includes request/response bodies
-- assessed-call audit entries contain hashes, categories, probabilities, model, usage, and decisions—not raw arguments
+- assessed-call audit entries contain hashes, categories, hazard probabilities, intent-alignment probability, model, usage, and decisions—not raw arguments or user-request text
 - session-bypassed calls receive compact audit entries containing only the tool name, timestamp, allow decision, and bypass marker
 
 TypeSafe states that service inputs are not used to train or fine-tune models. Zero-data-retention is an enterprise feature. Review TypeSafe's current privacy and data-handling terms before enabling the service for sensitive environments.

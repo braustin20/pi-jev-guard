@@ -10,14 +10,24 @@ import type { JevClassifier } from "../src/jev.js";
 
 class FakeClassifier implements JevClassifier {
   public calls = 0;
+  public lastCall: NormalizedCall | undefined;
   public available(): boolean { return true; }
-  public async classify(_call: NormalizedCall, config: GuardConfig): Promise<JevAssessment> {
+  public async classify(call: NormalizedCall, config: GuardConfig): Promise<JevAssessment> {
     this.calls++;
+    this.lastCall = call;
     return {
       probabilities: Object.fromEntries(Object.keys(config.hazards).map((name) => [name, 0.01])),
       model: config.model,
       usage: { input_tokens: 1, output_tokens: 1 },
     };
+  }
+}
+
+class AlignedIntentClassifier extends FakeClassifier {
+  public override async classify(call: NormalizedCall, config: GuardConfig): Promise<JevAssessment> {
+    const result = await super.classify(call, config);
+    result.probabilities.sensitive_data_exfiltration = 0.8;
+    return { ...result, intentAlignment: 0.98 };
   }
 }
 
@@ -50,6 +60,7 @@ function context(cwd: string, options: {
   hasUI: boolean;
   select?: (title: string, choices: string[]) => Promise<string | undefined>;
   notify?: (message: string) => void;
+  userRequest?: string;
 }): ExtensionContext {
   return {
     cwd,
@@ -57,6 +68,15 @@ function context(cwd: string, options: {
     mode: options.hasUI ? "tui" : "json",
     signal: undefined,
     isProjectTrusted: () => true,
+    sessionManager: {
+      getBranch: () => options.userRequest === undefined ? [] : [{
+        type: "message",
+        id: "user-entry",
+        parentId: null,
+        timestamp: new Date().toISOString(),
+        message: { role: "user", content: options.userRequest, timestamp: Date.now() },
+      }],
+    },
     ui: {
       select: options.select ?? (async () => undefined),
       notify: options.notify ?? (() => {}),
@@ -206,6 +226,24 @@ test("test command still reports its assessment while the guard is bypassed", as
   assert.match(notification, /Tool: bash/);
   assert.doesNotMatch(notification, /is bypassed for the current session/);
   assert.equal(classifier.calls, 2);
+}));
+
+test("user shell and test commands do not reuse conversational intent", async () => isolatedAgentDir(async (cwd, agentDir) => {
+  await writeFile(path.join(agentDir, "jev-guard.json"), JSON.stringify({
+    version: 1,
+    intentAwareness: { enabled: true },
+  }), { mode: 0o600 });
+  const pi = fakePi();
+  const classifier = new FakeClassifier();
+  registerJevGuard(pi.api, classifier);
+  const ctx = context(cwd, { hasUI: true, userRequest: "Delete everything" });
+  await pi.handlers.get("user_bash")?.(
+    { type: "user_bash", command: "git status", cwd, excludeFromContext: false },
+    ctx,
+  );
+  assert.equal(classifier.lastCall?.userRequest, undefined);
+  await pi.commands.get("jev-guard")?.handler("test git status", ctx);
+  assert.equal(classifier.lastCall?.userRequest, undefined);
 }));
 
 test("starting a new session clears the guard bypass", async () => isolatedAgentDir(async (cwd) => {
@@ -359,6 +397,31 @@ test("policy reload clears the session bypass and invalid policy still blocks", 
   assert.equal(result?.result.exitCode, 126);
   assert.match(result?.result.output, /configuration is invalid/);
   assert.equal(classifier.calls, 1);
+}));
+
+test("aligned user intent suppresses redundant Jev prompts without storing request text", async () => isolatedAgentDir(async (cwd, agentDir) => {
+  await writeFile(path.join(agentDir, "jev-guard.json"), JSON.stringify({
+    version: 1,
+    intentAwareness: { enabled: true },
+  }), { mode: 0o600 });
+  const pi = fakePi();
+  const classifier = new AlignedIntentClassifier();
+  registerJevGuard(pi.api, classifier);
+  const result = await pi.handlers.get("tool_call")?.(
+    {
+      type: "tool_call",
+      toolName: "github_create_pull_request",
+      toolCallId: "1",
+      input: { owner: "example", repository: "project", branch: "feat/example" },
+    },
+    context(cwd, { hasUI: false, userRequest: "Create a pull request for this change" }),
+  );
+  assert.equal(result, undefined);
+  assert.equal(classifier.calls, 1);
+  assert.equal(classifier.lastCall?.userRequest, "Create a pull request for this change");
+  assert.equal(pi.entries.length, 1);
+  assert.equal((pi.entries[0]?.data as { intentAlignment?: number }).intentAlignment, 0.98);
+  assert.doesNotMatch(JSON.stringify(pi.entries), /Create a pull request/);
 }));
 
 test("ask_user bypasses classification even when its prompt describes a destructive action", async () => isolatedAgentDir(async (cwd) => {

@@ -16,9 +16,13 @@ function detail(assessment: Assessment, sessionControlsEnabled: boolean): string
     }).join("\n");
   }
   const model = assessment.model ? `\nModel: ${assessment.model}` : "";
+  const intent = assessment.intentAlignment === undefined
+    ? ""
+    : `\nUser-request alignment: ${Math.round(assessment.intentAlignment * 100)}%`;
   const privacy = assessment.call.redacted
-    ? "Arguments were redacted before classification."
-    : "No secret-looking argument values required redaction.";
+    ? "Inputs were redacted before classification."
+    : "No secret-looking input values required redaction.";
+  const requestTruncation = assessment.call.userRequestTruncated ? " User request was truncated." : "";
   const truncation = assessment.call.stateTruncated ? " State was truncated to the configured byte limit." : "";
   return [
     `Tool: ${assessment.call.toolName}`,
@@ -28,8 +32,9 @@ function detail(assessment: Assessment, sessionControlsEnabled: boolean): string
     "Findings:",
     findings,
     model,
+    intent,
     "",
-    `${privacy}${truncation}`,
+    `${privacy}${requestTruncation}${truncation}`,
     ...(sessionControlsEnabled
       ? ["", "Warning: Allow all for current session disables guard decisions until /jev-guard enable, policy reload, or a new session starts."]
       : []),
