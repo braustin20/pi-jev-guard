@@ -1,11 +1,21 @@
-import { readFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { Ajv2020, type ErrorObject, type ValidateFunction } from "ajv/dist/2020.js";
 import safeRegex from "safe-regex2";
+import { readSecureGlobalConfigSource } from "./credentials.js";
 import { DEFAULT_CONFIG } from "./defaults.js";
 import type { ConfigLoadResult, Decision, GuardConfig, HazardConfig, RuleConfig } from "./types.js";
 
 let validatorPromise: Promise<ValidateFunction> | undefined;
+
+interface ConfigDocument extends Partial<GuardConfig> {
+  typesafeApiKey?: string;
+}
+
+export const DEFAULT_GLOBAL_CONFIG_DOCUMENT: ConfigDocument = {
+  version: 1,
+  typesafeApiKey: "",
+};
 
 function cloneDefault(): GuardConfig {
   return structuredClone(DEFAULT_CONFIG);
@@ -28,13 +38,40 @@ function formatErrors(errors: ErrorObject[] | null | undefined, source: string):
   return (errors ?? []).map((error) => `${source}${error.instancePath || "/"}: ${error.message ?? "invalid value"}`);
 }
 
-async function readConfigFile(filePath: string): Promise<{ value?: Partial<GuardConfig>; errors: string[] }> {
+async function readConfigFile(
+  filePath: string,
+  allowCredential: boolean,
+  secureGlobal: boolean,
+): Promise<{ value?: Partial<GuardConfig>; errors: string[] }> {
+  let source: string;
   try {
-    const source = await readFile(filePath, "utf8");
-    const value: unknown = JSON.parse(source);
+    if (secureGlobal) {
+      const secureSource = readSecureGlobalConfigSource(filePath, "policy");
+      if (secureSource === undefined) return { errors: [] };
+      source = secureSource;
+    } else {
+      source = await readFile(filePath, "utf8");
+    }
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return { errors: [] };
+    return { errors: [`${filePath}: ${error instanceof Error ? error.message : String(error)}`] };
+  }
+
+  let value: unknown;
+  try {
+    value = JSON.parse(source);
+  } catch {
+    return { errors: [`${filePath}: invalid JSON`] };
+  }
+
+  try {
     const validator = await getValidator();
     if (!validator(value)) return { errors: formatErrors(validator.errors, filePath) };
-    const config = value as Partial<GuardConfig>;
+    const document = value as ConfigDocument;
+    if (!allowCredential && Object.hasOwn(document, "typesafeApiKey")) {
+      return { errors: [`${filePath}: typesafeApiKey is allowed only in the global configuration`] };
+    }
+    const { typesafeApiKey: _credential, ...config } = document;
     const errors: string[] = [];
     for (const rule of config.rules ?? []) {
       if (rule.commandRegex) {
@@ -51,7 +88,6 @@ async function readConfigFile(filePath: string): Promise<{ value?: Partial<Guard
     }
     return errors.length > 0 ? { errors } : { value: config, errors: [] };
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return { errors: [] };
     return { errors: [`${filePath}: ${error instanceof Error ? error.message : String(error)}`] };
   }
 }
@@ -69,7 +105,7 @@ function mergeHazard(base: HazardConfig | undefined, patch: Partial<HazardConfig
 }
 
 function mergeConfig(base: GuardConfig, patch: Partial<GuardConfig>): GuardConfig {
-  const hazards = { ...base.hazards };
+  const hazards: Record<string, HazardConfig> = Object.assign(Object.create(null), base.hazards);
   for (const [name, value] of Object.entries(patch.hazards ?? {})) hazards[name] = mergeHazard(hazards[name], value);
   return {
     ...base,
@@ -102,6 +138,7 @@ function mergeTightenOnly(global: GuardConfig, project: Partial<GuardConfig>): G
   if (global.allowProjectRelaxation) return mergeConfig(global, project);
 
   const result = structuredClone(global);
+  result.hazards = Object.assign(Object.create(null), result.hazards) as Record<string, HazardConfig>;
   result.protectUserBash ||= project.protectUserBash ?? false;
   const projectInteractive = project.failureMode?.interactive;
   if (projectInteractive && INTERACTIVE_RANK[projectInteractive] > INTERACTIVE_RANK[result.failureMode.interactive]) {
@@ -143,14 +180,22 @@ export async function loadConfig(options: {
   projectPath: string;
   projectRoot: string;
   projectTrusted: boolean;
+  globalBase?: { config?: GuardConfig; errors: string[] };
 }): Promise<ConfigLoadResult> {
-  const globalResult = await readConfigFile(options.globalPath);
-  const errors = [...globalResult.errors];
-  let config = globalResult.value ? mergeConfig(cloneDefault(), globalResult.value) : cloneDefault();
+  let errors: string[];
+  let config: GuardConfig;
+  if (options.globalBase) {
+    errors = [...options.globalBase.errors];
+    config = structuredClone(options.globalBase.config ?? DEFAULT_CONFIG);
+  } else {
+    const globalResult = await readConfigFile(options.globalPath, true, true);
+    errors = [...globalResult.errors];
+    config = globalResult.value ? mergeConfig(cloneDefault(), globalResult.value) : cloneDefault();
+  }
   let projectConfigLoaded = false;
 
   if (options.projectTrusted) {
-    const projectResult = await readConfigFile(options.projectPath);
+    const projectResult = await readConfigFile(options.projectPath, false, false);
     errors.push(...projectResult.errors);
     if (projectResult.value) {
       config = mergeTightenOnly(config, projectResult.value);
@@ -169,6 +214,21 @@ export async function loadConfig(options: {
     projectConfigLoaded,
     errors,
   };
+}
+
+export async function ensureGlobalConfig(filePath: string): Promise<boolean> {
+  await mkdir(path.dirname(filePath), { recursive: true, mode: 0o700 });
+  try {
+    await writeFile(filePath, `${JSON.stringify(DEFAULT_GLOBAL_CONFIG_DOCUMENT, null, 2)}\n`, {
+      encoding: "utf8",
+      flag: "wx",
+      mode: 0o600,
+    });
+    return true;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "EEXIST") return false;
+    throw error;
+  }
 }
 
 export function mergeConfigForTest(base: GuardConfig, patch: Partial<GuardConfig>, tightenOnly: boolean): GuardConfig {

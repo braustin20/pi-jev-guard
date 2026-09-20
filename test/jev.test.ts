@@ -61,18 +61,18 @@ test("redacts secrets from every field in the actual TypeSafe request body", asy
 }));
 
 test("classifier uses the user-local credential file when the environment key is absent", { skip: process.platform === "win32" }, async () => {
-  const configHome = await mkdtemp(path.join(tmpdir(), "jev-guard-jev-credential-"));
-  const credentialDirectory = path.join(configHome, "pi-jev-guard");
-  await mkdir(credentialDirectory);
+  const root = await mkdtemp(path.join(tmpdir(), "jev-guard-jev-credential-"));
+  const agentDir = path.join(root, "agent");
+  await mkdir(agentDir, { mode: 0o700 });
   await writeFile(
-    path.join(credentialDirectory, "settings.json"),
-    JSON.stringify({ typesafeApiKey: "file-backed-key" }),
+    path.join(agentDir, "jev-guard.json"),
+    JSON.stringify({ version: 1, typesafeApiKey: "file-backed-key" }),
     { mode: 0o600 },
   );
   const previousKey = process.env.TYPESAFE_API_KEY;
-  const previousConfigHome = process.env.XDG_CONFIG_HOME;
+  const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
   delete process.env.TYPESAFE_API_KEY;
-  process.env.XDG_CONFIG_HOME = configHome;
+  process.env.PI_CODING_AGENT_DIR = agentDir;
   let called = false;
   const mockFetch: Fetch = async (_input, init) => {
     called = true;
@@ -90,8 +90,8 @@ test("classifier uses the user-local credential file when the environment key is
   } finally {
     if (previousKey === undefined) delete process.env.TYPESAFE_API_KEY;
     else process.env.TYPESAFE_API_KEY = previousKey;
-    if (previousConfigHome === undefined) delete process.env.XDG_CONFIG_HOME;
-    else process.env.XDG_CONFIG_HOME = previousConfigHome;
+    if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+    else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
   }
 });
 

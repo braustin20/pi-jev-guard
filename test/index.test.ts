@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -79,6 +79,15 @@ async function isolatedAgentDir<T>(run: (cwd: string, agentDir: string) => Promi
     else process.env.PI_CODING_AGENT_DIR = previous;
   }
 }
+
+test("session start creates a minimal global config when absent", async () => isolatedAgentDir(async (cwd, agentDir) => {
+  const pi = fakePi();
+  registerJevGuard(pi.api, new FakeClassifier());
+  await pi.handlers.get("session_start")?.({ type: "session_start", reason: "startup" }, context(cwd, { hasUI: false }));
+  const configPath = path.join(agentDir, "jev-guard.json");
+  assert.deepEqual(JSON.parse(await readFile(configPath, "utf8")), { version: 1, typesafeApiKey: "" });
+  if (process.platform !== "win32") assert.equal((await stat(configPath)).mode & 0o777, 0o600);
+}));
 
 test("blocked user shell result uses exit code 126", () => {
   assert.equal(blockedUserBash("denied").result.exitCode, 126);
@@ -254,7 +263,7 @@ test("session bypass choice is hidden when session approvals are disabled", asyn
   await writeFile(path.join(agentDir, "jev-guard.json"), JSON.stringify({
     version: 1,
     sessionApprovals: { enabled: false },
-  }));
+  }), { mode: 0o600 });
   const pi = fakePi();
   let offeredChoices: string[] = [];
   registerJevGuard(pi.api, new FakeClassifier());
@@ -276,7 +285,7 @@ test("session bypass choice is hidden when session approval capacity is zero", a
   await writeFile(path.join(agentDir, "jev-guard.json"), JSON.stringify({
     version: 1,
     sessionApprovals: { maxEntries: 0 },
-  }));
+  }), { mode: 0o600 });
   const pi = fakePi();
   let offeredChoices: string[] = [];
   registerJevGuard(pi.api, new FakeClassifier());
@@ -337,7 +346,11 @@ test("policy reload clears the session bypass and invalid policy still blocks", 
     { type: "user_bash", command: "rm -rf /tmp/reload-bypass", cwd, excludeFromContext: false },
     ctx,
   );
-  await writeFile(path.join(agentDir, "jev-guard.json"), JSON.stringify({ version: 1, unexpected: true }));
+  await writeFile(
+    path.join(agentDir, "jev-guard.json"),
+    JSON.stringify({ version: 1, unexpected: true }),
+    { mode: 0o600 },
+  );
   await pi.commands.get("jev-guard")?.handler("reload", ctx);
   const result = await pi.handlers.get("user_bash")?.(
     { type: "user_bash", command: "git status", cwd, excludeFromContext: false },
@@ -352,7 +365,7 @@ test("excluded tools bypass classification", async () => isolatedAgentDir(async 
   await writeFile(path.join(agentDir, "jev-guard.json"), JSON.stringify({
     version: 1,
     excludedTools: ["write"],
-  }));
+  }), { mode: 0o600 });
   const pi = fakePi();
   const classifier = new FakeClassifier();
   registerJevGuard(pi.api, classifier);

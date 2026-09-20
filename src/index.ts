@@ -8,7 +8,8 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { ApprovalPrompter } from "./approval.js";
 import { AUDIT_ENTRY_TYPE, createAuditEntry, createSessionBypassAuditEntry } from "./audit.js";
-import { loadConfig } from "./config.js";
+import { ensureGlobalConfig, loadConfig } from "./config.js";
+import { defaultCredentialPath } from "./credentials.js";
 import { DEFAULT_CONFIG } from "./defaults.js";
 import { TypeSafeJevClassifier, safeClassificationError, type JevClassifier } from "./jev.js";
 import { findGitRoot, normalizeCall } from "./normalize.js";
@@ -73,7 +74,7 @@ export class GuardRuntime {
     if (this.configPromise && this.configPromiseKey === key) return this.configPromise;
     const generation = ++this.configGeneration;
     const promise = (async () => {
-      const globalPath = path.join(getAgentDir(), "jev-guard.json");
+      const globalPath = defaultCredentialPath(getAgentDir());
       const preliminary = await loadConfig({
         globalPath,
         projectPath: path.join(ctx.cwd, CONFIG_DIR_NAME, "jev-guard.json"),
@@ -88,6 +89,10 @@ export class GuardRuntime {
         projectPath: path.join(projectRoot, CONFIG_DIR_NAME, "jev-guard.json"),
         projectRoot,
         projectTrusted: trusted,
+        globalBase: {
+          errors: preliminary.errors,
+          ...(preliminary.config ? { config: preliminary.config } : {}),
+        },
       });
     })();
     this.configPromise = promise;
@@ -304,6 +309,18 @@ export function registerJevGuard(
   pi.on("session_start", async (_event, ctx) => {
     guard.clearSessionState();
     guard.invalidateConfig();
+    const globalConfigPath = defaultCredentialPath(getAgentDir());
+    try {
+      const created = await ensureGlobalConfig(globalConfigPath);
+      if (created && ctx.hasUI) {
+        ctx.ui.notify(`Created Jev Guard configuration at ${globalConfigPath}`, "info");
+      }
+    } catch (error) {
+      if (ctx.hasUI) {
+        const message = error instanceof Error ? error.message : String(error);
+        ctx.ui.notify(`Could not create Jev Guard configuration: ${message}`, "warning");
+      }
+    }
     const status = await guard.status(ctx);
     if (status.startsWith("Jev Guard disabled") && ctx.hasUI) ctx.ui.notify(status, "error");
   });
