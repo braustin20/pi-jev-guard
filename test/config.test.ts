@@ -37,6 +37,31 @@ test("global protected paths and redaction keys extend secure defaults", () => {
   assert.ok(merged.privacy.redactKeys.includes("companyCredential"));
 });
 
+test("intent awareness configuration merges and project policy can only tighten it", () => {
+  const global = mergeConfigForTest(structuredClone(DEFAULT_CONFIG), {
+    intentAwareness: { enabled: true, alignmentAt: 0.8, maxRequestBytes: 4_096 },
+  }, false);
+  assert.deepEqual(global.intentAwareness, {
+    enabled: true,
+    alignmentAt: 0.8,
+    maxRequestBytes: 4_096,
+  });
+
+  const tightened = mergeConfigForTest(global, {
+    intentAwareness: { enabled: false, alignmentAt: 0.95, maxRequestBytes: 1_024 },
+  }, true);
+  assert.deepEqual(tightened.intentAwareness, {
+    enabled: false,
+    alignmentAt: 0.95,
+    maxRequestBytes: 1_024,
+  });
+
+  const cannotRelax = mergeConfigForTest(structuredClone(DEFAULT_CONFIG), {
+    intentAwareness: { enabled: true, alignmentAt: 0.5, maxRequestBytes: 8_192 },
+  }, true);
+  assert.deepEqual(cannotRelax.intentAwareness, DEFAULT_CONFIG.intentAwareness);
+});
+
 test("project merge is tighten-only by default", () => {
   const merged = mergeConfigForTest(structuredClone(DEFAULT_CONFIG), {
     protectUserBash: false,
@@ -200,4 +225,12 @@ test("rejects unknown fields and invalid regular expressions", async () => {
   const reservedHazard = await loadConfig({ globalPath, projectPath, projectRoot: root, projectTrusted: false });
   assert.equal(reservedHazard.config, undefined);
   assert.ok(reservedHazard.errors.some((error) => error.includes("must NOT be valid")));
+
+  await writeFile(
+    globalPath,
+    '{"version":1,"hazards":{"user_intent_alignment":{"decision":"prompt"}}}',
+  );
+  const intentCollision = await loadConfig({ globalPath, projectPath, projectRoot: root, projectTrusted: false });
+  assert.equal(intentCollision.config, undefined);
+  assert.ok(intentCollision.errors.some((error) => error.includes("must NOT be valid")));
 });

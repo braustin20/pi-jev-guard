@@ -60,6 +60,54 @@ test("redacts secrets from every field in the actual TypeSafe request body", asy
   assert.equal(customCall.redacted, true);
 }));
 
+test("does not retain user requests when intent awareness is disabled", async () => {
+  const call = await normalizeCall({
+    toolName: "bash",
+    arguments: { command: "git status" },
+    cwd: process.cwd(),
+    projectRoot: process.cwd(),
+    config: structuredClone(DEFAULT_CONFIG),
+    userRequest: "Private user request",
+  });
+  assert.equal(call.userRequest, undefined);
+});
+
+test("classifies redacted user-request alignment when intent awareness is enabled", async () => withApiKey(async () => {
+  let requestBody: { state: string; questions: Record<string, unknown> } | undefined;
+  const mockFetch: Fetch = async (_input, init) => {
+    requestBody = JSON.parse(String(init?.body)) as typeof requestBody;
+    const answers = Object.fromEntries(Object.keys(requestBody!.questions).map((name) => [
+      name,
+      { type: "noul", noul: name === "user_intent_alignment" ? 0.97 : 0.01 },
+    ]));
+    return new Response(JSON.stringify({ model: "jev-1.13.0", answers, usage: { input_tokens: 1, output_tokens: 1 } }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+  };
+  const config = structuredClone(DEFAULT_CONFIG);
+  config.intentAwareness.enabled = true;
+  config.intentAwareness.maxRequestBytes = 128;
+  const call = await normalizeCall({
+    toolName: "bash",
+    arguments: { command: "git push -u origin feat/example" },
+    cwd: process.cwd(),
+    projectRoot: process.cwd(),
+    config,
+    userRequest: `API_TOKEN=intent-secret Create a pull request ${"with the completed change ".repeat(20)}`,
+  });
+  const result = await new TypeSafeJevClassifier(mockFetch).classify(call, config);
+  const state = JSON.parse(requestBody!.state) as { userRequest: string };
+  assert.ok("user_intent_alignment" in requestBody!.questions);
+  assert.equal(result.intentAlignment, 0.97);
+  assert.equal("user_intent_alignment" in result.probabilities, false);
+  assert.doesNotMatch(JSON.stringify(requestBody), /intent-secret/);
+  assert.match(state.userRequest, /API_TOKEN=\[REDACTED\]/);
+  assert.match(state.userRequest, /\[TRUNCATED]$/);
+  assert.equal(call.userRequestTruncated, true);
+  assert.equal(call.redacted, true);
+}));
+
 test("classifier uses the user-local credential file when the environment key is absent", { skip: process.platform === "win32" }, async () => {
   const root = await mkdtemp(path.join(tmpdir(), "jev-guard-jev-credential-"));
   const agentDir = path.join(root, "agent");

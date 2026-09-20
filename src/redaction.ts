@@ -88,6 +88,15 @@ export function redactValue(
   return { value: output, redacted };
 }
 
+export function truncateString(value: string, maxBytes: number): { value: string; truncated: boolean } {
+  if (Buffer.byteLength(value, "utf8") <= maxBytes) return { value, truncated: false };
+  const suffix = "...[TRUNCATED]";
+  const budget = Math.max(0, maxBytes - Buffer.byteLength(suffix, "utf8"));
+  let prefix = Buffer.from(value, "utf8").subarray(0, budget).toString("utf8");
+  if (prefix.endsWith("�")) prefix = prefix.slice(0, -1);
+  return { value: prefix + suffix, truncated: true };
+}
+
 export function serializeState(value: unknown, maxBytes: number): { state: string; truncated: boolean } {
   const serialized = JSON.stringify(value);
   if (Buffer.byteLength(serialized, "utf8") <= maxBytes) return { state: serialized, truncated: false };

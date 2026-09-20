@@ -118,6 +118,7 @@ function mergeConfig(base: GuardConfig, patch: Partial<GuardConfig>): GuardConfi
       redactKeys: [...new Set([...base.privacy.redactKeys, ...(patch.privacy?.redactKeys ?? [])])],
     },
     sessionApprovals: { ...base.sessionApprovals, ...patch.sessionApprovals },
+    intentAwareness: { ...base.intentAwareness, ...patch.intentAwareness },
     hazards,
     protectedPaths: [...new Set([...base.protectedPaths, ...(patch.protectedPaths ?? [])])],
     trustedDestinations: patch.trustedDestinations ?? base.trustedDestinations,
@@ -155,6 +156,15 @@ function mergeTightenOnly(global: GuardConfig, project: Partial<GuardConfig>): G
   result.sessionApprovals.maxEntries = Math.min(
     result.sessionApprovals.maxEntries,
     project.sessionApprovals?.maxEntries ?? Infinity,
+  );
+  result.intentAwareness.enabled &&= project.intentAwareness?.enabled ?? true;
+  result.intentAwareness.alignmentAt = Math.max(
+    result.intentAwareness.alignmentAt,
+    project.intentAwareness?.alignmentAt ?? 0,
+  );
+  result.intentAwareness.maxRequestBytes = Math.min(
+    result.intentAwareness.maxRequestBytes,
+    project.intentAwareness?.maxRequestBytes ?? Infinity,
   );
   result.protectedPaths = [...new Set([...result.protectedPaths, ...(project.protectedPaths ?? [])])];
   result.rules = [

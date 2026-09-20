@@ -5,7 +5,7 @@ import { promisify } from "node:util";
 import { READ_ONLY_TOOLS } from "./defaults.js";
 import { detectDeterministic } from "./deterministic.js";
 import { extractPathInputs, inspectPath, isWithin } from "./paths.js";
-import { redactValue } from "./redaction.js";
+import { redactString, redactValue, truncateString } from "./redaction.js";
 import { analyzeShell, extractShellPathCandidates } from "./shell.js";
 import type {
   GuardConfig,
@@ -127,6 +127,7 @@ export async function normalizeCall(options: {
   projectRoot: string;
   config: GuardConfig;
   metadata?: ToolMetadata;
+  userRequest?: string;
 }): Promise<NormalizedCall> {
   const command = shellCommand(options.toolName, options.arguments);
   const shell = command === undefined ? undefined : analyzeShell(command);
@@ -142,6 +143,13 @@ export async function normalizeCall(options: {
     redactKeys: options.config.privacy.redactKeys,
     omitFileContents,
   });
+  const inputUserRequest = options.config.intentAwareness.enabled ? options.userRequest : undefined;
+  const sanitizedUserRequest = inputUserRequest === undefined
+    ? undefined
+    : redactString(inputUserRequest, options.config.privacy.redactKeys);
+  const boundedUserRequest = sanitizedUserRequest === undefined
+    ? undefined
+    : truncateString(sanitizedUserRequest, options.config.intentAwareness.maxRequestBytes);
   const mutating = shell?.mutating ?? !READ_ONLY_TOOLS.has(options.toolName);
   const networked = shell?.networked ?? likelyNetworked(options.toolName, options.arguments);
   const unknown = shell?.unknown ?? (!READ_ONLY_TOOLS.has(options.toolName) && !["write", "edit"].includes(options.toolName));
@@ -156,10 +164,12 @@ export async function normalizeCall(options: {
     paths,
     ...(shell ? { shell } : {}),
     ...(recoverabilityFacts ? { recoverability: recoverabilityFacts } : {}),
+    ...(boundedUserRequest?.value ? { userRequest: boundedUserRequest.value } : {}),
+    ...(boundedUserRequest?.truncated ? { userRequestTruncated: true } : {}),
     mutating,
     networked,
     unknown,
-    redacted: redacted.redacted,
+    redacted: redacted.redacted || sanitizedUserRequest !== inputUserRequest,
     stateTruncated: false,
     callHash: callHash(options.toolName, options.cwd, options.arguments),
   };

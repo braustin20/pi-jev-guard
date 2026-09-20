@@ -74,6 +74,11 @@ export const DEFAULT_CONFIG: GuardConfig = {
   ],
   trustedDestinations: [],
   excludedTools: [],
+  intentAwareness: {
+    enabled: false,
+    alignmentAt: 0.9,
+    maxRequestBytes: 2_048,
+  },
   sessionApprovals: {
     enabled: true,
     maxEntries: 256,

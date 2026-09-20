@@ -18,6 +18,21 @@ import type { Assessment, ConfigLoadResult, GuardConfig, ToolMetadata } from "./
 
 const INTERACTION_ONLY_TOOLS = new Set(["ask_user"]);
 
+function latestUserRequest(ctx: ExtensionContext): string | undefined {
+  const branch = ctx.sessionManager.getBranch();
+  for (let index = branch.length - 1; index >= 0; index--) {
+    const entry = branch[index];
+    if (entry?.type !== "message" || entry.message.role !== "user") continue;
+    if (typeof entry.message.content === "string") return entry.message.content.trim() || undefined;
+    const text = entry.message.content
+      .flatMap((item) => item.type === "text" ? [item.text] : [])
+      .join("\n")
+      .trim();
+    return text || undefined;
+  }
+  return undefined;
+}
+
 export class GuardRuntime {
   private configState: ConfigLoadResult | undefined;
   private configKey = "";
@@ -129,11 +144,13 @@ export class GuardRuntime {
     argumentsValue: unknown,
     cwd: string,
     ctx: ExtensionContext,
+    includeUserRequest = true,
   ): Promise<Assessment> {
     const loaded = await this.loadForContext(ctx);
     if (!loaded.config) throw new Error(`Invalid Jev Guard configuration: ${loaded.errors.join("; ")}`);
     const config = loaded.config;
     const metadata = this.metadata(toolName);
+    const userRequest = config.intentAwareness.enabled && includeUserRequest ? latestUserRequest(ctx) : undefined;
     const call = await normalizeCall({
       toolName,
       arguments: argumentsValue,
@@ -141,6 +158,7 @@ export class GuardRuntime {
       projectRoot: loaded.projectRoot,
       config,
       ...(metadata ? { metadata } : {}),
+      ...(userRequest ? { userRequest } : {}),
     });
 
     if (this.sessionControlsEnabled(config) && this.approvals.has(call.callHash)) {
@@ -257,6 +275,7 @@ export class GuardRuntime {
       `Project policy: ${projectPolicy}`,
       `TypeSafe API: ${this.classifier.available() ? "available" : "unavailable (environment and config-file credentials not found or invalid)"}`,
       `Protected user shell: ${loaded.config.protectUserBash ? "yes" : "no"}`,
+      `Intent awareness: ${loaded.config.intentAwareness.enabled ? "enabled" : "disabled"}`,
       `Session approvals: ${this.approvals.size}`,
     ].join("\n");
   }
@@ -279,6 +298,7 @@ export class GuardRuntime {
       `Call hash: ${assessment.call.callHash}`,
       `Findings: ${assessment.findings.length === 0 ? "none" : assessment.findings.map((finding) => finding.id).join(", ")}`,
       `Probabilities: ${Object.keys(assessment.probabilities).length === 0 ? "none" : JSON.stringify(assessment.probabilities)}`,
+      `Intent alignment: ${assessment.intentAlignment === undefined ? "not evaluated" : `${Math.round(assessment.intentAlignment * 100)}%`}`,
       `Model: ${assessment.model ?? "unavailable"}`,
       `Arguments redacted: ${assessment.call.redacted ? "yes" : "no"}`,
     ].join("\n");
@@ -381,7 +401,7 @@ export function registerJevGuard(
 
     let assessment: Assessment;
     try {
-      assessment = await guard.assess("user_bash", { command: event.command }, event.cwd, ctx);
+      assessment = await guard.assess("user_bash", { command: event.command }, event.cwd, ctx, false);
     } catch (error) {
       return blockedUserBash(error instanceof Error ? error.message : String(error));
     }
@@ -426,7 +446,7 @@ export function registerJevGuard(
           return;
         }
         try {
-          const assessment = await guard.assess("bash", { command }, ctx.cwd, ctx);
+          const assessment = await guard.assess("bash", { command }, ctx.cwd, ctx, false);
           guard.audit(assessment);
           ctx.ui.notify(guard.explainLastAssessment(), assessment.decision === "block" ? "error" : "info");
         } catch (error) {

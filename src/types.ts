@@ -55,6 +55,8 @@ export interface NormalizedCall {
   paths: PathFact[];
   shell?: ShellFacts;
   recoverability?: RecoverabilityFacts;
+  userRequest?: string;
+  userRequestTruncated?: boolean;
   deterministicFindings: Finding[];
   mutating: boolean;
   networked: boolean;
@@ -113,6 +115,11 @@ export interface GuardConfig {
   protectedPaths: string[];
   trustedDestinations: string[];
   excludedTools: string[];
+  intentAwareness: {
+    enabled: boolean;
+    alignmentAt: number;
+    maxRequestBytes: number;
+  };
   sessionApprovals: {
     enabled: boolean;
     maxEntries: number;
@@ -122,6 +129,7 @@ export interface GuardConfig {
 
 export interface JevAssessment {
   probabilities: Record<string, number>;
+  intentAlignment?: number;
   model: string;
   usage: { input_tokens: number; output_tokens: number };
 }
@@ -132,6 +140,7 @@ export interface Assessment {
   call: NormalizedCall;
   findings: Finding[];
   probabilities: Record<string, number>;
+  intentAlignment?: number;
   model?: string;
   usage?: { input_tokens: number; output_tokens: number };
   classificationError?: string;

@@ -67,6 +67,7 @@ function assessment(
     call,
     findings,
     probabilities: jev?.probabilities ?? {},
+    ...(jev?.intentAlignment === undefined ? {} : { intentAlignment: jev.intentAlignment }),
     ...(jev ? { model: jev.model, usage: jev.usage } : {}),
     ...(rule ? { matchedRule: rule.id } : {}),
     timestamp: new Date().toISOString(),
@@ -102,6 +103,11 @@ export function composeDecision(call: NormalizedCall, config: GuardConfig, jev: 
   }
 
   const findings = [...call.deterministicFindings];
+  const intentAligned = config.intentAwareness.enabled &&
+    call.userRequest !== undefined &&
+    jev.intentAlignment !== undefined &&
+    jev.intentAlignment >= config.intentAwareness.alignmentAt;
+  let intentSuppressedPrompt = false;
   if (call.stateTruncated) {
     findings.push({
       id: "classifier-state-truncated",
@@ -114,6 +120,10 @@ export function composeDecision(call: NormalizedCall, config: GuardConfig, jev: 
   for (const [name, probability] of Object.entries(jev.probabilities)) {
     const policy = config.hazards[name];
     if (!policy?.enabled || probability < policy.promptAt) continue;
+    if (policy.decision === "prompt" && intentAligned) {
+      intentSuppressedPrompt = true;
+      continue;
+    }
     findings.push({
       id: `jev:${name}`,
       category: name,
@@ -135,7 +145,10 @@ export function composeDecision(call: NormalizedCall, config: GuardConfig, jev: 
 
   const allowRule = matchedRule(call, config, "allow");
   if (allowRule) return assessment(call, "allow", `Allowed by rule ${allowRule.id}`, findings, jev, allowRule);
-  return assessment(call, "allow", "No enabled hazard crossed its threshold", findings, jev);
+  const reason = intentSuppressedPrompt
+    ? "Hazard prompts were covered by the explicit user request"
+    : "No enabled hazard crossed its threshold";
+  return assessment(call, "allow", reason, findings, jev);
 }
 
 export function composeFailureDecision(

@@ -52,6 +52,60 @@ test("Jev hazard at threshold prompts", () => {
   assert.ok(result.findings.some((finding) => finding.id === "jev:destructive_filesystem"));
 });
 
+test("strong intent alignment suppresses model prompt findings", () => {
+  const config = structuredClone(DEFAULT_CONFIG);
+  config.intentAwareness.enabled = true;
+  const alignedCall = call();
+  alignedCall.userRequest = "Create a pull request for this change";
+  const jev = structuredClone(clear);
+  jev.probabilities.sensitive_data_exfiltration = 0.8;
+  jev.intentAlignment = 0.98;
+  const result = composeDecision(alignedCall, config, jev);
+  assert.equal(result.decision, "allow");
+  assert.match(result.reason, /explicit user request/);
+  assert.equal(result.intentAlignment, 0.98);
+  assert.equal(result.findings.some((finding) => finding.source === "jev"), false);
+});
+
+test("intent alignment below threshold does not suppress model prompts", () => {
+  const config = structuredClone(DEFAULT_CONFIG);
+  config.intentAwareness.enabled = true;
+  const broaderCall = call();
+  broaderCall.userRequest = "Create a pull request";
+  const jev = structuredClone(clear);
+  jev.probabilities.destructive_version_control = 0.8;
+  jev.intentAlignment = 0.6;
+  assert.equal(composeDecision(broaderCall, config, jev).decision, "prompt");
+});
+
+test("intent alignment never suppresses model blocks", () => {
+  const config = structuredClone(DEFAULT_CONFIG);
+  config.intentAwareness.enabled = true;
+  config.hazards.destructive_version_control!.decision = "block";
+  const alignedCall = call();
+  alignedCall.userRequest = "Force-push the branch";
+  const jev = structuredClone(clear);
+  jev.probabilities.destructive_version_control = 0.8;
+  jev.intentAlignment = 0.99;
+  assert.equal(composeDecision(alignedCall, config, jev).decision, "block");
+});
+
+test("deterministic prompts still apply when intent is aligned", () => {
+  const config = structuredClone(DEFAULT_CONFIG);
+  config.intentAwareness.enabled = true;
+  const finding: Finding = {
+    id: "outside-project",
+    category: "outside_project_or_system_change",
+    message: "outside",
+    decision: "prompt",
+    source: "deterministic",
+  };
+  const alignedCall = call([finding]);
+  alignedCall.userRequest = "Make the change";
+  const jev = { ...structuredClone(clear), intentAlignment: 0.99 };
+  assert.equal(composeDecision(alignedCall, config, jev).decision, "prompt");
+});
+
 test("deterministic prompt beats explicit allow", () => {
   const config = structuredClone(DEFAULT_CONFIG);
   config.rules = [{ id: "allow-git", decision: "allow", commandRegex: "^git status" }];
