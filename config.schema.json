@@ -6,6 +6,7 @@
   "additionalProperties": false,
   "properties": {
     "version": { "const": 1 },
+    "typesafeApiKey": { "type": "string", "maxLength": 4096 },
     "model": { "type": "string", "minLength": 1 },
     "protectUserBash": { "type": "boolean" },
     "allowProjectRelaxation": { "type": "boolean" },
@@ -43,6 +44,9 @@
     },
     "hazards": {
       "type": "object",
+      "propertyNames": {
+        "not": { "enum": ["__proto__", "constructor", "prototype"] }
+      },
       "additionalProperties": { "$ref": "#/$defs/hazard" }
     },
     "protectedPaths": {

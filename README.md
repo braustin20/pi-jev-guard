@@ -24,9 +24,9 @@ Jev evaluates enabled hazards independently. TypeScript policy composition appli
 
 - Node.js 20.6 or newer
 - Pi with extension/package support
-- A TypeSafe API key supplied through `TYPESAFE_API_KEY` or the user-local credential file described below
+- A TypeSafe API key supplied through `TYPESAFE_API_KEY` or the global Jev Guard configuration described below
 
-No API key is stored in extension policy configuration.
+API keys are accepted only from the process environment or global configuration, never from project policy.
 
 ## Install
 
@@ -51,28 +51,33 @@ Load this extension last. Pi runs `tool_call` handlers in extension load order, 
 The extension resolves the TypeSafe key in this order:
 
 1. A non-empty `TYPESAFE_API_KEY` environment variable.
-2. `typesafeApiKey` in `$XDG_CONFIG_HOME/pi-jev-guard/settings.json` when `XDG_CONFIG_HOME` is an absolute path, or `~/.config/pi-jev-guard/settings.json` otherwise.
+2. `typesafeApiKey` in the global `~/.pi/agent/jev-guard.json` configuration (or the equivalent file under `PI_CODING_AGENT_DIR`).
 
-The settings file is strict JSON and is never sourced or executed:
+Add the credential alongside global policy:
 
 ```json
 {
+  "version": 1,
   "typesafeApiKey": "your-key"
 }
 ```
 
-Unknown settings, malformed JSON, and an empty or non-string `typesafeApiKey` are rejected.
+The credential is stripped before policy merging and is never accepted from project configuration. It is not included in classifier state or audit entries.
 
-Protect the file so only your user can read it:
+On its first load, the extension creates this minimal global configuration when the file does not exist:
 
-```sh
-mkdir -p ~/.config/pi-jev-guard
-chmod 700 ~/.config/pi-jev-guard
-$EDITOR ~/.config/pi-jev-guard/settings.json
-chmod 600 ~/.config/pi-jev-guard/settings.json
+```json
+{
+  "version": 1,
+  "typesafeApiKey": ""
+}
 ```
 
-On Unix-like systems, the extension requires the configuration and `pi-jev-guard` directories to be owned by the current user, real directories rather than symlinks, and not writable by group or other users. It also rejects symlink settings files, files not owned by the current user, files readable by group or other users, and files larger than 16 KiB. Settings-file loading is refused on Windows; use the environment variable there. An invalid settings file is treated as unavailable classification and follows the configured fail-closed behavior. Never place this file in the repository.
+The generated file uses mode `600`. Keeping the file minimal allows built-in policy defaults to evolve with extension updates. Pi packages do not expose a package-specific post-install hook, so creation occurs when Pi first loads the installed extension rather than during `pi install` itself.
+
+When upgrading from a version that used `~/.config/pi-jev-guard/settings.json`, copy its `typesafeApiKey` value into the global `jev-guard.json`, run `chmod 600 ~/.pi/agent/jev-guard.json`, and remove the old settings file after verification.
+
+On Unix-like systems, credential loading requires the Pi configuration and agent directories to be owned by the current user, real directories rather than symlinks, and not writable by group or other users. It also rejects a symlink global configuration, files not owned by the current user, files readable by group or other users, and files larger than 256 KiB. Config-file credential loading is refused on Windows; use the environment variable there. Invalid configuration follows the configured fail-closed behavior. Never commit a populated global configuration.
 
 ## Configuration
 

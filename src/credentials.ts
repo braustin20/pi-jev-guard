@@ -1,10 +1,9 @@
 import { constants, closeSync, fstatSync, lstatSync, openSync, readSync } from "node:fs";
-import { homedir } from "node:os";
 import path from "node:path";
+import { getAgentDir } from "@earendil-works/pi-coding-agent";
 
-const MAX_CREDENTIAL_FILE_BYTES = 16 * 1024;
-const CREDENTIAL_FILE_NAME = "settings.json";
-const SETTINGS_KEYS = new Set(["typesafeApiKey"]);
+const MAX_CONFIG_FILE_BYTES = 256 * 1024;
+const CONFIG_FILE_NAME = "jev-guard.json";
 
 export interface TypeSafeCredential {
   apiKey: string;
@@ -13,7 +12,7 @@ export interface TypeSafeCredential {
 
 export interface CredentialLookupOptions {
   environment?: NodeJS.ProcessEnv;
-  configHome?: string;
+  agentDir?: string;
 }
 
 export class CredentialError extends Error {
@@ -30,18 +29,11 @@ export class CredentialFileError extends CredentialError {
   }
 }
 
-function defaultConfigHome(environment: NodeJS.ProcessEnv): string {
-  const configuredHome = environment.XDG_CONFIG_HOME;
-  return configuredHome && path.isAbsolute(configuredHome)
-    ? configuredHome
-    : path.join(homedir(), ".config");
+export function defaultCredentialPath(agentDir: string = getAgentDir()): string {
+  return path.join(agentDir, CONFIG_FILE_NAME);
 }
 
-export function defaultCredentialPath(environment: NodeJS.ProcessEnv = process.env): string {
-  return path.join(defaultConfigHome(environment), "pi-jev-guard", CREDENTIAL_FILE_NAME);
-}
-
-function parseCredentialFile(source: string, filePath: string): string {
+function parseCredentialFile(source: string, filePath: string): string | undefined {
   if (source.includes("\0")) throw new CredentialFileError(`${filePath} contains a NUL byte`);
   let parsed: unknown;
   try {
@@ -52,15 +44,12 @@ function parseCredentialFile(source: string, filePath: string): string {
   if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
     throw new CredentialFileError(`${filePath} must contain a JSON object`);
   }
-  const settings = parsed as Record<string, unknown>;
-  const unknownKeys = Object.keys(settings).filter((key) => !SETTINGS_KEYS.has(key));
-  if (unknownKeys.length > 0) {
-    throw new CredentialFileError(`${filePath} contains unknown settings: ${unknownKeys.join(", ")}`);
+  const apiKey = (parsed as { typesafeApiKey?: unknown }).typesafeApiKey;
+  if (apiKey === undefined || apiKey === "") return undefined;
+  if (typeof apiKey !== "string" || apiKey.trim().length === 0) {
+    throw new CredentialFileError(`${filePath} must define typesafeApiKey as a non-empty string or omit it`);
   }
-  if (typeof settings.typesafeApiKey !== "string" || settings.typesafeApiKey.trim().length === 0) {
-    throw new CredentialFileError(`${filePath} must define a non-empty typesafeApiKey string`);
-  }
-  return settings.typesafeApiKey.trim();
+  return apiKey.trim();
 }
 
 function assertSecureDirectory(directoryPath: string): void {
@@ -83,17 +72,59 @@ function assertSecureDirectory(directoryPath: string): void {
   }
 }
 
-function readCredentialFile(filePath: string): string | undefined {
+function readBoundedFile(descriptor: number, filePath: string): string {
+  const stats = fstatSync(descriptor);
+  if (!stats.isFile()) throw new CredentialFileError(`${filePath} is not a regular file`);
+  if (stats.size > MAX_CONFIG_FILE_BYTES) {
+    throw new CredentialFileError(`${filePath} exceeds ${MAX_CONFIG_FILE_BYTES} bytes`);
+  }
+  const buffer = Buffer.alloc(MAX_CONFIG_FILE_BYTES + 1);
+  let offset = 0;
+  for (;;) {
+    if (offset >= buffer.length) break;
+    const bytesRead = readSync(descriptor, buffer, offset, buffer.length - offset, null);
+    if (bytesRead === 0) break;
+    offset += bytesRead;
+  }
+  if (offset > MAX_CONFIG_FILE_BYTES) {
+    throw new CredentialFileError(`${filePath} exceeds ${MAX_CONFIG_FILE_BYTES} bytes`);
+  }
+  return buffer.subarray(0, offset).toString("utf8");
+}
+
+export function readSecureGlobalConfigSource(
+  filePath: string,
+  purpose: "credential" | "policy" = "credential",
+): string | undefined {
   if (process.platform === "win32") {
+    let stats;
     try {
-      lstatSync(filePath);
+      stats = lstatSync(filePath);
     } catch (error) {
       const code = (error as NodeJS.ErrnoException).code;
       if (code === "ENOENT") return undefined;
-      throw new CredentialFileError(`Unable to inspect the TypeSafe credential file: ${code ?? "unknown error"}`);
+      throw new CredentialFileError(`Unable to inspect the Jev Guard configuration: ${code ?? "unknown error"}`);
     }
-    throw new CredentialError("Credential-file loading is unsupported on Windows; use TYPESAFE_API_KEY instead");
+    if (purpose === "credential") {
+      throw new CredentialError("Config-file credential loading is unsupported on Windows; use TYPESAFE_API_KEY instead");
+    }
+    if (stats.isSymbolicLink() || !stats.isFile()) {
+      throw new CredentialFileError(`${filePath} must be a regular file, not a link`);
+    }
+    let descriptor: number;
+    try {
+      descriptor = openSync(filePath, constants.O_RDONLY);
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      throw new CredentialFileError(`Unable to open ${filePath}: ${code ?? "unknown error"}`);
+    }
+    try {
+      return readBoundedFile(descriptor, filePath);
+    } finally {
+      closeSync(descriptor);
+    }
   }
+
   let descriptor: number;
   try {
     descriptor = openSync(filePath, constants.O_RDONLY | constants.O_NOFOLLOW);
@@ -107,14 +138,10 @@ function readCredentialFile(filePath: string): string | undefined {
   }
 
   try {
-    const credentialDirectory = path.dirname(filePath);
-    assertSecureDirectory(path.dirname(credentialDirectory));
-    assertSecureDirectory(credentialDirectory);
+    const agentDirectory = path.dirname(filePath);
+    assertSecureDirectory(path.dirname(agentDirectory));
+    assertSecureDirectory(agentDirectory);
     const stats = fstatSync(descriptor);
-    if (!stats.isFile()) throw new CredentialFileError(`${filePath} is not a regular file`);
-    if (stats.size > MAX_CREDENTIAL_FILE_BYTES) {
-      throw new CredentialFileError(`${filePath} exceeds ${MAX_CREDENTIAL_FILE_BYTES} bytes`);
-    }
     if ((stats.mode & 0o077) !== 0) {
       throw new CredentialFileError(`${filePath} permissions are too broad; run chmod 600 ${filePath}`);
     }
@@ -122,18 +149,7 @@ function readCredentialFile(filePath: string): string | undefined {
     if (currentUser !== undefined && stats.uid !== currentUser) {
       throw new CredentialFileError(`${filePath} is not owned by the current user`);
     }
-    const buffer = Buffer.alloc(MAX_CREDENTIAL_FILE_BYTES + 1);
-    let offset = 0;
-    for (;;) {
-      if (offset >= buffer.length) break;
-      const bytesRead = readSync(descriptor, buffer, offset, buffer.length - offset, null);
-      if (bytesRead === 0) break;
-      offset += bytesRead;
-    }
-    if (offset > MAX_CREDENTIAL_FILE_BYTES) {
-      throw new CredentialFileError(`${filePath} exceeds ${MAX_CREDENTIAL_FILE_BYTES} bytes`);
-    }
-    return parseCredentialFile(buffer.subarray(0, offset).toString("utf8"), filePath);
+    return readBoundedFile(descriptor, filePath);
   } finally {
     closeSync(descriptor);
   }
@@ -144,8 +160,8 @@ export function resolveTypeSafeCredential(options: CredentialLookupOptions = {})
   const environmentKey = environment.TYPESAFE_API_KEY?.trim();
   if (environmentKey) return { apiKey: environmentKey, source: "environment" };
 
-  const configHome = options.configHome ?? defaultConfigHome(environment);
-  const filePath = path.join(configHome, "pi-jev-guard", CREDENTIAL_FILE_NAME);
-  const fileKey = readCredentialFile(filePath);
+  const filePath = defaultCredentialPath(options.agentDir);
+  const source = readSecureGlobalConfigSource(filePath, "credential");
+  const fileKey = source === undefined ? undefined : parseCredentialFile(source, filePath);
   return fileKey ? { apiKey: fileKey, source: "config-file" } : undefined;
 }
